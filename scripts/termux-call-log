@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!@TERMUX_PREFIX@/bin/bash
 set -u
 
 PARAM_LIMIT=10
@@ -23,10 +23,15 @@ do
         ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
     esac
 done
-shift $(($OPTIND-1))
+shift $((OPTIND-1))
 
 if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
 
+  <<<<<<< master
+PARAMS="$PARAMS --ei offset $PARAM_OFFSET --ei limit $PARAM_LIMIT"
+@TERMUX_PREFIX@/libexec/termux-api CallLog $PARAMS
+  =======
 echo "{'api_method' : 'CallLog',
        'offset' : ${PARAM_OFFSET},
        'limit' : ${PARAM_LIMIT}}" | /data/data/com.termux/files/usr/usr/libexec/termux-api
+  >>>>>>> sockets

@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/sh
+#!@TERMUX_PREFIX@/bin/sh
 set -e -u
 
 SCRIPTNAME=termux-location
@@ -36,13 +36,13 @@ while getopts :hr:p: option
 do
     case "$option" in
         h) show_usage;;
-        r) validate_request $OPTARG; PARAMS="$PARAMS --es request $OPTARG";;
-        p) validate_provider $OPTARG; PARAMS="$PARAMS --es provider $OPTARG";;
+        r) validate_request "$OPTARG"; PARAMS="$PARAMS --es request $OPTARG";;
+        p) validate_provider "$OPTARG"; PARAMS="$PARAMS --es provider $OPTARG";;
         ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
     esac
 done
-shift $(($OPTIND-1))
+shift $((OPTIND-1))
 
 if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
 
-/data/data/com.termux/files/usr/libexec/termux-api Location $PARAMS
+@TERMUX_PREFIX@/libexec/termux-api Location $PARAMS

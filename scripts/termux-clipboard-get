@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/sh
+#!@TERMUX_PREFIX@/bin/sh
 set -e -u
 
 SCRIPTNAME=termux-clipboard-get
@@ -15,8 +15,12 @@ do
         ?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
     esac
 done
-shift $(($OPTIND-1))
+shift $((OPTIND-1))
 
 if [ $# != 0 ]; then echo "$SCRIPTNAME: too many arguments"; exit 1; fi
 
+  <<<<<<< master
+@TERMUX_PREFIX@/libexec/termux-api Clipboard
+  =======
 echo "{'api_method' : 'Clipboard'}" | /data/data/com.termux/files/usr/libexec/termux-api
+  >>>>>>> sockets

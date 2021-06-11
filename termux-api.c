@@ -1,5 +1,15 @@
 // termux-api.c - helper binary for calling termux api classes
 // Usage: termux-api ${API_METHOD} ${ADDITIONAL_FLAGS}
+  <<<<<<< master
+//        This executes
+//          am broadcast com.termux.api/.TermuxApiReceiver --es socket_input ${INPUT_SOCKET}
+//                                                        --es socket_output ${OUTPUT_SOCKET}
+//                                                        --es ${API_METHOD}
+//                                                        ${ADDITIONAL_FLAGS}
+//        where ${INPUT_SOCKET} and ${OUTPUT_SOCKET} are addresses to linux abstract namespace sockets,
+//        used to pass on stdin to the java implementation and pass back output from java to stdout.
+  =======
+  >>>>>>> sockets
 #define _POSIX_SOURCE
 #define _GNU_SOURCE
 #include <fcntl.h>
@@ -36,9 +46,18 @@ _Noreturn void exec_am_broadcast()
     child_argv[5] = "com.termux.api/.TermuxApiReceiver";
 
     // Use an a executable taking care of PATH and LD_LIBRARY_PATH:
-    execv("/data/data/com.termux/files/usr/bin/am", child_argv);
+    execv(PREFIX "/bin/am", child_argv);
 
-    perror("execv(\"/data/data/com.termux/files/usr/bin/am\")");
+    perror("execv(\"" PREFIX "/bin/am\")");
+    exit(1);
+}
+
+_Noreturn void exec_callback(int fd)
+{
+    char *fds;
+    if(asprintf(&fds, "%d", fd) == -1) { perror("asprintf"); }
+    execl(PREFIX "/libexec/termux-callback", "termux-callback", fds, NULL);
+    perror("execl(\"" PREFIX "/libexec/termux-callback\")");
     exit(1);
 }
 
@@ -57,13 +76,32 @@ void* transmit_stdin_to_socket(void* arg) {
 }
 
 // Main thread function which reads from input socket and writes to stdout.
-void transmit_socket_to_stdout(int input_socket_fd) {
+int transmit_socket_to_stdout(int input_socket_fd) {
     ssize_t len;
     char buffer[1024];
-    while ((len = read(input_socket_fd, &buffer, sizeof(buffer))) > 0) {
+    char cbuf[256];
+    struct iovec io = { .iov_base = buffer, .iov_len = sizeof(buffer) };
+    struct msghdr msg = { 0 };
+    int fd = -1;  // An optional file descriptor received through the socket
+    msg.msg_iov = &io;
+    msg.msg_iovlen = 1;
+    msg.msg_control = cbuf;
+    msg.msg_controllen = sizeof(cbuf);
+    while ((len = recvmsg(input_socket_fd, &msg, 0)) > 0) {
+        struct cmsghdr * cmsg = CMSG_FIRSTHDR(&msg);
+        if (cmsg && cmsg->cmsg_len == CMSG_LEN(sizeof(int))) {
+            if (cmsg->cmsg_type == SCM_RIGHTS) {
+                fd = *((int *) CMSG_DATA(cmsg));
+            }
+        }
+        // A file descriptor must be accompanied by a non-empty message,
+        // so we use "@" when we don't want any output.
+        if (fd != -1 && len == 1 && buffer[0] == '@') { len = 0; }
         write(STDOUT_FILENO, buffer, len);
+        msg.msg_controllen = sizeof(cbuf);
     }
-    if (len < 0) perror("read()");
+    if (len < 0) perror("recvmsg()");
+    return fd;
 }
 
 int main() {
@@ -104,7 +142,16 @@ int main() {
     socklen_t addrlen = sizeof(remote_addr);
     int input_client_socket = accept(input_server_socket, (struct sockaddr*) &remote_addr, &addrlen);
 
+  <<<<<<< master
+    pthread_t transmit_thread;
+    pthread_create(&transmit_thread, NULL, transmit_stdin_to_socket, &output_server_socket);
+
+    int fd = transmit_socket_to_stdout(input_client_socket);
+    close(input_client_socket);
+    if (fd != -1) { exec_callback(fd); }
+  =======
     transmit_socket_to_stdout(input_client_socket);
+  >>>>>>> sockets
 
     return 0;
 }

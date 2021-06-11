@@ -1,4 +1,8 @@
+  <<<<<<< master
+#!@TERMUX_PREFIX@/bin/sh
+  =======
 #!/data/data/com.termux/files/usr/bin/bash
+  >>>>>>> sockets
 set -e -u
 
 SCRIPTNAME=termux-clipboard-set
@@ -15,12 +19,20 @@ do
 	?) echo "$SCRIPTNAME: illegal option -$OPTARG"; exit 1;
     esac
 done
-shift $(($OPTIND-1))
+shift $((OPTIND-1))
 
+  <<<<<<< master
+CMD="@TERMUX_PREFIX@/libexec/termux-api Clipboard -e api_version 2 --ez set true"
+  =======
+  >>>>>>> sockets
 if [ $# = 0 ]; then
     text=$(</proc/$$/fd/0)
 else
+  <<<<<<< master
+	echo -n "$@" | $CMD
+  =======
     echo "else if"
+  >>>>>>> sockets
 fi
 
 echo $text
