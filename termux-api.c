@@ -1,5 +1,6 @@
 // termux-api.c - helper binary for calling termux api classes
 // Usage: termux-api ${API_METHOD} ${ADDITIONAL_FLAGS}
+  <<<<<<< master
 //        This executes
 //          am broadcast com.termux.api/.TermuxApiReceiver --es socket_input ${INPUT_SOCKET}
 //                                                        --es socket_output ${OUTPUT_SOCKET}
@@ -7,6 +8,8 @@
 //                                                        ${ADDITIONAL_FLAGS}
 //        where ${INPUT_SOCKET} and ${OUTPUT_SOCKET} are addresses to linux abstract namespace sockets,
 //        used to pass on stdin to the java implementation and pass back output from java to stdout.
+  =======
+  >>>>>>> sockets
 #define _POSIX_SOURCE
 #define _GNU_SOURCE
 #include <fcntl.h>
@@ -25,7 +28,7 @@
 #include <unistd.h>
 
 // Function which execs "am broadcast ..".
-_Noreturn void exec_am_broadcast(int argc, char** argv, char* input_address_string, char* output_address_string)
+_Noreturn void exec_am_broadcast()
 {
     // Redirect stdout to /dev/null (but leave stderr open):
     close(STDOUT_FILENO);
@@ -33,8 +36,7 @@ _Noreturn void exec_am_broadcast(int argc, char** argv, char* input_address_stri
     // Close stdin:
     close(STDIN_FILENO);
 
-    int const extra_args = 15; // Including ending NULL.
-    char** child_argv = malloc((sizeof(char*)) * (argc + extra_args));
+    char** child_argv = malloc((sizeof(char*)));
 
     child_argv[0] = "am";
     child_argv[1] = "broadcast";
@@ -42,22 +44,6 @@ _Noreturn void exec_am_broadcast(int argc, char** argv, char* input_address_stri
     child_argv[3] = "0";
     child_argv[4] = "-n";
     child_argv[5] = "com.termux.api/.TermuxApiReceiver";
-    child_argv[6] = "--es";
-    // Input/output are reversed for the java process (our output is its input):
-    child_argv[7] = "socket_input";
-    child_argv[8] = output_address_string;
-    child_argv[9] = "--es";
-    child_argv[10] = "socket_output";
-    child_argv[11] = input_address_string;
-    child_argv[12] = "--es";
-    child_argv[13] = "api_method";
-    child_argv[14] = argv[1];
-
-    // Copy the remaining arguments -2 for first binary and second api name:
-    memcpy(child_argv + extra_args, argv + 2, (argc-1) * sizeof(char*));
-
-    // End with NULL:
-    child_argv[argc + extra_args] = NULL;
 
     // Use an a executable taking care of PATH and LD_LIBRARY_PATH:
     execv(PREFIX "/bin/am", child_argv);
@@ -75,29 +61,17 @@ _Noreturn void exec_callback(int fd)
     exit(1);
 }
 
-void generate_uuid(char* str) {
-    sprintf(str, "%x%x-%x-%x-%x-%x%x%x",
-            arc4random(), arc4random(),                 // Generates a 64-bit Hex number
-            (uint32_t) getpid(),                        // Generates a 32-bit Hex number
-            ((arc4random() & 0x0fff) | 0x4000),         // Generates a 32-bit Hex number of the form 4xxx (4 indicates the UUID version)
-            arc4random() % 0x3fff + 0x8000,             // Generates a 32-bit Hex number in the range [0x8000, 0xbfff]
-            arc4random(), arc4random(), arc4random());  // Generates a 96-bit Hex number
-}
-
 // Thread function which reads from stdin and writes to socket.
 void* transmit_stdin_to_socket(void* arg) {
     int output_server_socket = *((int*) arg);
-    struct sockaddr_un remote_addr;
-    socklen_t addrlen = sizeof(remote_addr);
-    int output_client_socket = accept(output_server_socket, (struct sockaddr*) &remote_addr, &addrlen);
 
     ssize_t len;
     char buffer[1024];
     while (len = read(STDIN_FILENO, &buffer, sizeof(buffer)), len > 0) {
-        if (write(output_client_socket, buffer, len) < 0) break;
+        if (write(output_server_socket, buffer, len) < 0) break;
     }
     // Close output socket on end of input:
-    close(output_client_socket);
+    close(output_server_socket);
     return NULL;
 }
 
@@ -130,16 +104,13 @@ int transmit_socket_to_stdout(int input_socket_fd) {
     return fd;
 }
 
-int main(int argc, char** argv) {
+int main() {
     // Do not transform children into zombies when they terminate:
     struct sigaction sigchld_action = { .sa_handler = SIG_DFL, .sa_flags = SA_RESTART | SA_NOCLDSTOP | SA_NOCLDWAIT };
     sigaction(SIGCHLD, &sigchld_action, NULL);
 
-    char input_address_string[100];  // This program reads from it.
-    char output_address_string[100]; // This program writes to it.
-
-    generate_uuid(input_address_string);
-    generate_uuid(output_address_string);
+    char input_address_string[] = "termux-output";  // This program reads from it.
+    char output_address_string[] = "termux-input"; // This program writes to it.
 
     struct sockaddr_un input_address = { .sun_family = AF_UNIX };
     struct sockaddr_un output_address = { .sun_family = AF_UNIX };
@@ -156,30 +127,31 @@ int main(int argc, char** argv) {
         perror("bind(input)");
         return 1;
     }
-    if (bind(output_server_socket, (struct sockaddr*) &output_address, sizeof(sa_family_t) + strlen(output_address_string) + 1) == -1) {
-        perror("bind(output)");
+
+    if (connect(output_server_socket, (struct sockaddr*) &output_address, sizeof(sa_family_t) + strlen(output_address_string) + 1) == -1) {
+        exec_am_broadcast();
         return 1;
     }
 
     if (listen(input_server_socket, 1) == -1) { perror("listen()"); return 1; }
-    if (listen(output_server_socket, 1) == -1) { perror("listen()"); return 1; }
 
-    pid_t fork_result = fork();
-    switch (fork_result) {
-        case -1: perror("fork()"); return 1;
-        case 0: exec_am_broadcast(argc, argv, input_address_string, output_address_string);
-    }
+    pthread_t transmit_thread;
+    pthread_create(&transmit_thread, NULL, transmit_stdin_to_socket, &output_server_socket);
 
     struct sockaddr_un remote_addr;
     socklen_t addrlen = sizeof(remote_addr);
     int input_client_socket = accept(input_server_socket, (struct sockaddr*) &remote_addr, &addrlen);
 
+  <<<<<<< master
     pthread_t transmit_thread;
     pthread_create(&transmit_thread, NULL, transmit_stdin_to_socket, &output_server_socket);
 
     int fd = transmit_socket_to_stdout(input_client_socket);
     close(input_client_socket);
     if (fd != -1) { exec_callback(fd); }
+  =======
+    transmit_socket_to_stdout(input_client_socket);
+  >>>>>>> sockets
 
     return 0;
 }
